@@ -1,0 +1,283 @@
+---
+title: "6218 project"
+author: "zequan chen"
+date: "4/12/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Import all your libraries here
+library(TSA)
+library(forecast)
+library(skedastic)
+library(car)
+library(tseries)
+library(quantmod)
+library(timeSeries)
+library(TTR)
+```
+
+```{r}
+error_eval<-function(prediction,actual,type){
+    
+    # The function evaluates forecasting error based on predictions and actual values of the series
+    # 
+    # Inputs:
+    # 
+    # -predictions (numeric): a vector contains predicted values over time
+    # -actual (numeric): the actual values of the series
+    # -type (character): "mse" for mean squared error, "mape" for mean absolute percentage error
+    #
+    # Output:
+    #
+    # -error (numeric): a number shows the error based on the type specified.
+   if (type=="mse"){
+     mse=mean((actual-prediction)^2)
+     return (mse)
+   } 
+   if (type=="mape"){
+     mape=mean(abs((actual-prediction)/actual))*100
+     return (mape)
+   }
+    
+}
+```
+
+```{r}
+# your codes
+auto=read.csv("tcs_stock.csv",header=TRUE)
+attach(auto)
+head(auto,5)
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+# your codes
+closeprice=ts(Close,start=c(2015,1), frequency=230)
+ts.plot(closeprice,ylab="Sales Level", main="Autosales in the U.S. from  2015-01 to 2016-01")
+```
+
+
+```{r}
+# your codes here
+acf(closeprice,lag=24)
+pacf(closeprice,lag=24)
+#based on the acf it is non-stationary graph, which is random walk
+```
+
+```{r}
+auto_cf = acf(closeprice,lag=24, plot = FALSE)
+auto_cf
+pauto_cf = pacf(closeprice,lag=24, plot = FALSE)
+pauto_cf
+```
+
+```{r}
+print(adf.test(closeprice))
+```
+```{r}
+fit=auto[1:174,]
+hold_out=auto[175:nrow(auto),]
+```
+
+```{r}
+Box.test(fit$Close,type=c("Box-Pierce"),lag=20)
+```
+
+```{r}
+n=length(fit$Close)
+ybar=mean(fit$Close)
+s_y=sd(fit$Close)
+
+UB=ybar + (qt(0.975,n-1)*s_y*sqrt(1+(1/n)))
+LB=ybar - (qt(0.975,n-1)*s_y*sqrt(1+(1/n)))
+
+fitPred_cm=array(0,c(3,length(fit$Close)))
+fitPred_cm[1,]=UB
+fitPred_cm[2,]=ybar
+fitPred_cm[3,]=LB
+
+ts.plot(fit$Close,col="red",main="Constant Mean: Prediction Vs Actual Series",ylab="ClosePrice" )
+lines(fitPred_cm[1,],col="blue")
+lines(fitPred_cm[2,],col="blue")
+lines(fitPred_cm[3,],col="blue")
+```
+
+
+```{r}
+#your codes here
+outPred_cm=array(0,c(3,length(hold_out$Close)))
+outPred_cm[1,]=UB
+outPred_cm[2,]=ybar
+outPred_cm[3,]=LB
+
+print(sprintf("The mse of the constant mean model is %.2f", error_eval(outPred_cm[2,],hold_out$Close,"mse")))
+
+print(sprintf("The mape of the constant mean model is %.2f percent", error_eval(outPred_cm[2,],hold_out$Close,"mape")))
+
+#since the mape less than 5.81 percent, which mean it is a quit good performance for the constant model
+```
+```{r}
+fitPred_rw=rep(0,length(fit$Close))
+for (t in 2:length(fit$Close)){
+  fitPred_rw[t]=fit$Close[t-1]
+}
+
+ts.plot(fit$Close[2:length(fit$Close)],ylab="close price", main="Random Walk: Predicition VS Actual Series")
+lines(fitPred_rw[2:length(fit$Close)],col="red",type="o")
+```
+
+
+```{r}
+res_rw=fit$Close[2:length(fit$Close)]-fitPred_rw[2:length(fit$Close)]
+Box.test(res_rw,type="Box-Pierce",lag=20)
+#it is WN since the p value larger than 0.05
+```
+
+```{r}
+outPred_rw=rep(0,length(hold_out$Close))
+outPred_rw[]=fit$Close[length(fit$Close)]
+
+print(sprintf("The mse of the random walk model is %.2f", error_eval(outPred_rw,hold_out$Close,"mse")))
+
+print(sprintf("The mape of the random walk model is %.2f percent", error_eval(outPred_rw,hold_out$Close,"mape")))
+# the mape decrease which means that the performance increase for random wal model
+```
+
+```{r}
+# your codes here
+diff_auto=diff(fit$Close,lag=1)
+
+par(mfrow=c(1,2))
+ts.plot(diff_auto,main="Differenced Close",ylab="Difference in Close")
+acf(diff_auto,main="ACF of Differenced Close")
+```
+
+```{r}
+Box.test(diff_auto,type="Box-Pierce",lag=20)
+
+```
+
+```{r}
+fit=auto[1:200,]
+diff_auto=diff(fit$Close,lag=1)
+drift_fit=lm(diff_auto~1)
+summary(drift_fit)
+C=drift_fit$coef
+
+#since the p value is very huge, the draft is not significant
+```
+
+
+```{r}
+# your codes here
+#fitPred_s5=exp(predict(seasonFit_5))
+#error_pred=fitted(arima_model)
+
+n_high=High[1:174]
+n_low=Low[1:174]
+n_open=Open[1:174]
+n_close=Close[1:174]
+n_volume=Volume[1:174]
+n_trade=Trades[1:174]
+n_deliverable=Deliverable.Volume[1:174]
+
+
+x=cbind(n_high,n_low,n_open,n_volume,n_trade,n_deliverable)
+final_model=Arima(n_close, order = c(1, 0, 0), xreg=x)
+summary(final_model)
+
+fitPred_error=fitted(final_model)
+
+ts.plot(n_close,ylab="Close price", main="ARIMA(1,0,0): Predicition VS Actual Series")
+lines(fitPred_error,col="red")
+```
+
+```{r}
+# your codes here
+#fitPred_s5=exp(predict(seasonFit_5))
+#error_pred=fitted(arima_model)
+
+n_high=High[1:174]
+n_low=Low[1:174]
+n_open=Open[1:174]
+n_close=Close[1:174]
+n_volume=Volume[1:174]
+n_trade=Trades[1:174]
+n_deliverable=Deliverable.Volume[1:174]
+
+
+x=cbind(n_high,n_low,n_open,n_volume,n_trade,n_deliverable)
+final_model=Arima(n_close, order = c(1, 1, 0), xreg=x)
+summary(final_model)
+
+fitPred_error=fitted(final_model)
+
+ts.plot(n_close,ylab="Close price", main="Seasonal Dummies and Trend: Predicition VS Actual Series")
+lines(fitPred_error,col="red")
+
+lines(forecast(fitPred_error,h=24))
+
+```
+
+
+
+```{r}
+summary(final_model)
+```
+
+
+```{r}
+fitted(final_model)
+```
+
+```{r}
+n_high=High[175:248]
+n_low=Low[175:248]
+n_open=Open[175:248]
+n_close=Close[175:248]
+n_volume=Volume[175:248]
+n_trade=Trades[175:248]
+n_deliverable=Deliverable.Volume[175:248]
+
+
+x=cbind(n_high,n_low,n_open,n_volume,n_trade,n_deliverable)
+
+
+library(forecast)
+forcast_dataframe=forecast(final_model, h=24, xreg=x)
+
+```
+
+
+```{r}
+# your codes here
+
+print(sprintf("The mse of the AR model is %.2f", error_eval(forcast_dataframe[["mean"]],Close[175:248],"mse")))
+
+print(sprintf("The mape of the AR model is %.2f percent", error_eval(forcast_dataframe[["mean"]],Close[175:248],"mape")))
+
+```
+
+```{r}
+plot(forcast_dataframe)
+
+```
+
+```{r}
+summary(forcast_dataframe)
+```
+
+
+
+
+
